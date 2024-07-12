@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <div id="app">{{age}}</div>
+    <script src="./vue.js"></script>
+    <script>
+      const vm = new Vue({
+        data() {
+          return {
+            age: 19,
+            firstName: "121212",
+            lastName: "0000",
+            arr: [12, 12, 31, { a: 12 }], //对于数组用object.defineProperty 也可以实现响应式，但是考虑到性能问题所以不采用，直接劫持数组方法
+          };
+        },
+        computed: {
+          name() {
+            return this.age;
+          },
+          fullName: {
+            get() {
+              console.log("run");
+              return this.lastName + this.firstName + this.name;
+            },
+          },
+        },
+        el: "#app",
+      });
+      setTimeout(() => {
+        vm.age = 90;
+      }, 2000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <!-- 我们可以给模板中的每一个属性增加一个收集器 dep -->
+    <!-- 页面渲染的时候，我们将渲染逻辑封装到watcher中，vm._update(vm._render()) -->
+    <!-- 让dep 记住这个watcher就可以，然后当数据发生变化的时候去通知这个watcher 去更新视图 -->
+    <div id="app" style="color: red; font-size: 18px; background-color: yellow">
+      <div style="color: red; font-size: 18px">
+        <div>{{age}}</div>
+      </div>
+      <span style="font-size: 16px; color: blue">{{age}}121212{{message}}</span>
+      <div>hhhhhh</div>
+    </div>
+    <script src="./vue.js"></script>
+    <script>
+      const vm = new Vue({
+        data() {
+          return {
+            message: "12s",
+            age: 19,
+            arr: [12, 12, 31, { a: 12 }], //对于数组用object.defineProperty 也可以实现响应式，但是考虑到性能问题所以不采用，直接劫持数组方法
+          };
+        },
+        el: "#app",
+        // template: "<div>hello</div>",
+      });
+      setTimeout(() => {
+        vm.message = "lzy";
+        vm.age = 20;
+        vm.$nextTick(() => {
+          console.log(vm.$el.innerHTML);
+        });
+      }, 3000);
+    </script>
+  </body>
+</html>
