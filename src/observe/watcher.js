@@ -29,6 +29,11 @@ class Watcher {
     pushTarget(this);
     let value = this.getter.call(this.vm);
     popTarget();
+    //这边还需要清空watcher 和dep 得关联
+    //考虑到v-if 的使用，
+    //如果值改变，其中一个值在变化不会继续重新渲染，
+    //所以清空后，v-if绑定的值发生变化时，
+    //重新执行render然后重新收集依赖就不会把之前的还保留住
     return value;
   }
   addDep(dep) {
@@ -139,7 +144,7 @@ if (Promise) {
 }
 
 export function nextTick(cb) {
-  callbacks.push(cb);
+  callbacks.push(cb); //这边他用数组,是为了防止多次调用nextTick然后创建多个定时器会消耗性能
   if (!waiting) {
     timerFunc();
     waiting = true;

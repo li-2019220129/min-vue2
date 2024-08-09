@@ -1,53 +1,20 @@
 import Watcher from "./observe/watcher";
 import { createElementVNode, createTextVNode } from "./vdom";
-
-function createElm(vnode) {
-  let { tag, data, children, text } = vnode;
-  if (typeof tag === "string") {
-    vnode.el = document.createElement(tag);
-
-    patchProps(vnode.el, data);
-    children.forEach((child) => {
-      vnode.el.appendChild(createElm(child));
-    });
-  } else {
-    vnode.el = document.createTextNode(text);
-  }
-  return vnode.el;
-}
-
-function patchProps(el, props) {
-  for (let key in props) {
-    if (key === "style") {
-      for (let styleName in props.style) {
-        el.style[styleName] = props.style[styleName];
-      }
-    } else {
-      el.setAttribute(key, props[key]);
-    }
-  }
-}
-
-function patch(oldVnode, vnode) {
-  const isRealElement = oldVnode.nodeType;
-  if (isRealElement) {
-    const elm = oldVnode;
-    const parentElm = elm.parentNode;
-    const newElm = createElm(vnode);
-    parentElm.insertBefore(newElm, elm.nextSibling);
-    parentElm.removeChild(elm);
-    return newElm;
-  } else {
-    //diff算法
-  }
-}
+import { patch } from "./vdom/patch";
 
 export function initLifecycle(Vue) {
   Vue.prototype._update = function (vnode) {
     // console.log("_upload", vnode);
     const vm = this;
     const el = vm.$el;
-    vm.$el = patch(el, vnode);
+    const prevVnode = vm._vnode;
+    vm._vnode = vnode;
+    if (prevVnode) {
+      //之前渲染过了
+      vm.$el = patch(prevVnode, vnode);
+    } else {
+      vm.$el = patch(el, vnode);
+    }
   };
 
   // _c('div',{},...children)

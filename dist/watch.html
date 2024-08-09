@@ -6,9 +6,13 @@
     <title>Document</title>
   </head>
   <body>
-    <div id="app">{{age}}</div>
+    <div id="app">
+      {{age}}
+      <div>112121221111121asasas2122</div>
+    </div>
     <script src="./vue.js"></script>
     <script>
+      debugger;
       const vm = new Vue({
         data() {
           return {
@@ -27,9 +31,9 @@
         el: "#app",
       });
 
-      setTimeout(() => {
-        vm.age = 90;
-      }, 1000);
+      // setTimeout(() => {
+      //   vm.age = 90;
+      // }, 1000);
     </script>
   </body>
 </html>

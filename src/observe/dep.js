@@ -8,7 +8,6 @@ class Dep {
     Dep.target.addDep(this);
   }
   addSub(watcher) {
-    debugger;
     this.subs.push(watcher);
   }
   notify() {

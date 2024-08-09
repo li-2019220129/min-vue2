@@ -1,28 +1,24 @@
 import { initGlobalApi } from "./gloablApi";
 import { initMixin } from "./init";
 import { initLifecycle } from "./lifecycle";
-import Watcher, { nextTick } from "./observe/watcher";
+import Watcher from "./observe/watcher";
+import { initStateMixin } from "./state";
 
 function Vue(options) {
   // vue初始化操作
   this._init(options);
 }
 
-Vue.prototype.$nextTick = nextTick;
 // 初始化操作
 initMixin(Vue);
 
+// vm_update vm_render
 initLifecycle(Vue);
 
+//全局api
 initGlobalApi(Vue);
-Vue.prototype.$watch = function (exprOrFn, cb) {
-  new Watcher(
-    this,
-    exprOrFn,
-    {
-      user: true,
-    },
-    cb
-  );
-};
+
+// 实现了nextTick和$watch
+initStateMixin(Vue);
+
 export default Vue;

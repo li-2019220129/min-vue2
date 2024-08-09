@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <div id="app">
+      <my-button></my-button>
+    </div>
+    <script src="./vue.js"></script>
+    <script>
+      //更实例
+      //组件的三大特性，自定标签，组件里面有自己的属性和事件，组件的插槽
+      Vue.component(
+        "my-button",
+        Vue.extend({
+          template: "<div>121212</div>",
+        })
+      );
+      const vm = new Vue({
+        data() {
+          return {
+            age: 19,
+          };
+        },
+        el: "#app",
+      });
+    </script>
+  </body>
+</html>

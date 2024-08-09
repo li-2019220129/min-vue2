@@ -19,6 +19,15 @@
       }
     };
   });
+  strats.components = function (parentVal, childVal) {
+    var res = Object.create(parentVal);
+    if (childVal) {
+      for (var key in childVal) {
+        res[key] = childVal[key]; // 返回的是构造的对象，可以拿到父亲原型上的属性，并且将儿子的都拷贝到自己的身上
+      }
+    }
+    return res;
+  };
   function mergeOptions(parent, child) {
     var options = {};
     for (var key in parent) {
@@ -40,10 +49,29 @@
   }
 
   function initGlobalApi(Vue) {
-    Vue.options = {};
+    Vue.options = {
+      _base: Vue
+    };
     Vue.mixin = function (mixin) {
       this.options = mergeOptions(this.options, mixin);
       return this;
+    };
+    Vue.extend = function (options) {
+      function Sub() {
+        var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+        this._init(options);
+      } //使用一个组件就是new 一个实例
+      Sub.prototype = Object.create(Vue.prototype);
+      Sub.prototype.constructor = Sub;
+      Sub.options = mergeOptions(Vue.options, options); //所有子组件都是走的这个，所以如果data是一个对象而不是一个函数的话就会导致引用重复问题，然后导致多个子组件共用同一个对象空间，造成错误
+      return Sub;
+    };
+    Vue.options.components = {};
+    Vue.component = function (id, definition) {
+      if (typeof definition !== "function") {
+        Vue.extend(definition);
+      }
+      Vue.options.components[id] = definition;
     };
   }
 
@@ -356,7 +384,6 @@
     }, {
       key: "addSub",
       value: function addSub(watcher) {
-        debugger;
         this.subs.push(watcher);
       }
     }, {
@@ -608,7 +635,7 @@
     };
   }
   function nextTick(cb) {
-    callbacks.push(cb);
+    callbacks.push(cb); //这边他用数组,是为了防止多次调用nextTick然后创建多个定时器会消耗性能
     if (!waiting) {
       timerFunc();
       waiting = true;
@@ -699,9 +726,21 @@
       return watcher.value;
     };
   }
+  function initStateMixin(Vue) {
+    Vue.prototype.$nextTick = nextTick;
+    Vue.prototype.$watch = function (exprOrFn, cb) {
+      new Watcher(this, exprOrFn, {
+        user: true
+      }, cb);
+    };
+  }
 
   //h() _c()
   // _c('div',{},...children)
+
+  var isReservedTag = function isReservedTag(tag) {
+    return ["a", "p", "li", "ul", "div", "img", "span", "button"].includes(tag);
+  };
   function createElementVNode(vm, tag) {
     var _data;
     var data = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
@@ -713,9 +752,29 @@
     for (var _len = arguments.length, children = new Array(_len > 3 ? _len - 3 : 0), _key = 3; _key < _len; _key++) {
       children[_key - 3] = arguments[_key];
     }
-    return vnode(vm, tag, key, data, children);
+    if (isReservedTag(tag)) {
+      return vnode(vm, tag, key, data, children);
+    } else {
+      //创造一个组件的虚拟节点
+      var Ctor = vm.$options.components[tag]; // 组件的构造函数
+      return createComponentVnode(vm, tag, key, data, children, Ctor);
+    }
+    // return vnode(vm, tag, key, data, children);
   }
-
+  function createComponentVnode(vm, tag, key, data, children, Ctor) {
+    if (_typeof(Ctor) === "object") {
+      Ctor = vm.$options._base["extends"](Ctor);
+    }
+    data.hook = {
+      init: function init(vnode) {
+        var instance = vnode.componentInstance = new vnode.componentOptions.Ctor();
+        instance.$mount();
+      }
+    };
+    return vnode(vm, tag, key, data, children, undefined, {
+      Ctor: Ctor
+    });
+  }
   // _v('text')
   function createTextVNode(vm, text) {
     return vnode(vm, undefined, undefined, undefined, undefined, text);
@@ -723,25 +782,42 @@
 
   //ast一样吗？ ast做的是语法层面的转化 他描述的是语法本身
   // 虚拟dom描述的是dom元素,可以增加一些自定义属性
-  function vnode(vm, tag, key, data, children, text) {
+  function vnode(vm, tag, key, data, children, text, componentOptions) {
     return {
       vm: vm,
       tag: tag,
       key: key,
       data: data,
       children: children,
-      text: text
+      text: text,
+      componentOptions: componentOptions
     };
   }
+  function isSameVnode(vnode1, vnode2) {
+    return vnode1.tag === vnode2.tag && vnode1.key === vnode2.key;
+  }
 
+  function createComponent(vnode) {
+    var i = vnode.data;
+    if ((i = i.hook) && (i = i.init)) {
+      i(vnode);
+    }
+    if (vnode.componentInstance) {
+      return true;
+    }
+  }
   function createElm(vnode) {
     var tag = vnode.tag,
       data = vnode.data,
       children = vnode.children,
       text = vnode.text;
     if (typeof tag === "string") {
+      //创建元素，也要区分是组件还是元素
+      if (createComponent(vnode)) {
+        return vnode.componentInstance.$el;
+      }
       vnode.el = document.createElement(tag);
-      patchProps(vnode.el, data);
+      patchProps(vnode.el, {}, data);
       children.forEach(function (child) {
         vnode.el.appendChild(createElm(child));
       });
@@ -750,18 +826,36 @@
     }
     return vnode.el;
   }
-  function patchProps(el, props) {
-    for (var key in props) {
-      if (key === "style") {
+  function patchProps(el) {
+    var oldProps = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+    var props = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+    //老的属性有,新的没有,删除
+    var oldStyle = oldProps.style || {};
+    var newStyle = props.style || {};
+    for (var key in oldStyle) {
+      if (!newStyle[key]) {
+        el.style[key] = "";
+      }
+    }
+    for (var _key in oldProps) {
+      if (!props[_key]) {
+        el.removeAttribute(_key);
+      }
+    }
+    for (var _key2 in props) {
+      if (_key2 === "style") {
         for (var styleName in props.style) {
           el.style[styleName] = props.style[styleName];
         }
       } else {
-        el.setAttribute(key, props[key]);
+        el.setAttribute(_key2, props[_key2]);
       }
     }
   }
   function patch(oldVnode, vnode) {
+    if (!oldVnode) {
+      return createElm(vnode);
+    }
     var isRealElement = oldVnode.nodeType;
     if (isRealElement) {
       var elm = oldVnode;
@@ -770,14 +864,142 @@
       parentElm.insertBefore(newElm, elm.nextSibling);
       parentElm.removeChild(elm);
       return newElm;
+    } else {
+      //diff算法
+      //1.两个节点不是同一个节点,直接删除老的节点，直接使用新的节点
+      //2.两个节点是同一个节点(判断节点的tag和节点的key属性)，比较节点的属性是否有差异(复用老的节点,将差异属性更新
+      //3.节点比较完成就要比较子节点了
+      return patchVnode(oldVnode, vnode);
     }
   }
+  function patchVnode(oldVnode, vnode) {
+    if (!isSameVnode(oldVnode, vnode)) {
+      var _el = createElm(vnode);
+      oldVnode.el.parentNode.replaceChild(_el, oldVnode.el);
+      return _el;
+    }
+
+    //文本情况,文本期望比较一下文本的内容
+    var el = vnode.el = oldVnode.el;
+    if (!oldVnode.tag) {
+      if (oldVnode.text !== vnode.text) {
+        el.textContent = vnode.text;
+      }
+    }
+
+    //标签,标签的更新
+    patchProps(el, oldVnode.data, vnode.data);
+    var oldChildren = oldVnode.children || [];
+    var newChildren = vnode.children || [];
+    if (oldChildren.length > 0 && newChildren.length > 0) {
+      //都有子节点
+      updateChildren(el, oldChildren, newChildren);
+    } else if (newChildren.length > 0) {
+      //新的有子节点,老的没有子节点
+      mountChildren(el, newChildren);
+    } else if (oldChildren.length > 0) {
+      el.innerHTML = ""; //可以循环删除
+    }
+    return el;
+  }
+  function mountChildren(el, children) {
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      el.appendChild(createElm(child));
+    }
+  }
+  function updateChildren(el, oldChildren, newChildren) {
+    var oldStartIndex = 0;
+    var oldStartVnode = oldChildren[oldStartIndex];
+    var oldEndIndex = oldChildren.length - 1;
+    var oldEndVnode = oldChildren[oldEndIndex];
+    var newStartIndex = 0;
+    var newStartVnode = newChildren[newStartIndex];
+    var newEndIndex = newChildren.length - 1;
+    var newEndVnode = newChildren[newEndIndex];
+    function makeIndexByKey(children) {
+      var map = {};
+      children.forEach(function (child, index) {
+        map[child.key] = index;
+      });
+      return map;
+    }
+    var map = makeIndexByKey(oldChildren);
+    while (oldStartIndex <= oldEndIndex && newStartIndex <= newEndIndex) {
+      if (!oldStartVnode) {
+        oldStartVnode = oldChildren[++oldStartIndex];
+      } else if (!oldEndVnode) {
+        oldEndVnode = oldChildren[--oldEndIndex];
+      } else if (isSameVnode(oldStartVnode, newStartVnode)) {
+        // 头头比较
+        patchVnode(oldStartVnode, newStartVnode);
+        oldStartVnode = oldChildren[++oldStartIndex];
+        newStartVnode = newChildren[++newStartIndex];
+      } else if (isSameVnode(oldEndVnode, newEndVnode)) {
+        // 尾尾比较
+        patchVnode(oldEndVnode, newEndVnode);
+        oldEndVnode = oldChildren[--oldEndIndex];
+        newEndVnode = newChildren[--newEndIndex];
+      }
+      // 交叉对比 abcd -> dabc
+      else if (isSameVnode(oldEndVnode, newStartVnode)) {
+        patchVnode(oldEndVnode, newStartVnode);
+        el.insertBefore(oldEndVnode.el, oldStartVnode.el);
+        oldEndVnode = oldChildren[--oldEndIndex];
+        newStartVnode = newChildren[++newStartIndex];
+      } else if (isSameVnode(oldStartVnode, newEndVnode)) {
+        patchVnode(oldStartVnode, newEndVnode);
+        el.insertBefore(oldStartVnode.el, oldEndVnode.el.nextSibling);
+        oldStartVnode = oldChildren[++oldStartIndex];
+        newEndVnode = newChildren[--newEndIndex];
+      } else {
+        //在给动态列表添加key的时候，要尽量避免使用索引，因为索引可能会变化，可能会发生错误复用
+
+        //乱序对比
+        // 根据老的列表做一个映射关系，用新的去找，找到就移动，找不到就添加，最后多余的删除
+        var moveIndex = map[newStartVnode.key];
+        if (moveIndex !== undefined) {
+          var moveVNode = oldChildren[moveIndex];
+          patchVnode(moveVNode, newStartVnode);
+          el.insertBefore(moveVNode.el, oldStartVnode.el);
+          oldChildren[moveIndex] = null;
+        } else {
+          el.insertBefore(createElm(newStartVnode), oldStartVnode.el);
+        }
+        newStartVnode = newChildren[++newStartIndex];
+      }
+    }
+    if (newStartIndex <= newEndIndex) {
+      for (var i = newStartIndex; i <= newEndIndex; i++) {
+        var child = createElm(newChildren[i]);
+        var anchor = newChildren[newEndIndex + 1] ? newChildren[newEndIndex + 1].el : null;
+        el.insertBefore(child, anchor);
+        console.log(anchor);
+      }
+    }
+    if (oldStartIndex <= oldEndIndex) {
+      for (var _i = oldStartIndex; _i <= oldEndIndex; _i++) {
+        if (oldChildren[_i] !== null) {
+          var _child = oldChildren[_i];
+          el.removeChild(_child.el);
+        }
+      }
+    }
+  }
+
   function initLifecycle(Vue) {
     Vue.prototype._update = function (vnode) {
       // console.log("_upload", vnode);
       var vm = this;
       var el = vm.$el;
-      vm.$el = patch(el, vnode);
+      var prevVnode = vm._vnode;
+      vm._vnode = vnode;
+      if (prevVnode) {
+        //之前渲染过了
+        vm.$el = patch(prevVnode, vnode);
+      } else {
+        vm.$el = patch(el, vnode);
+      }
     };
 
     // _c('div',{},...children)
@@ -859,16 +1081,18 @@
     // vue初始化操作
     this._init(options);
   }
-  Vue.prototype.$nextTick = nextTick;
+
   // 初始化操作
   initMixin(Vue);
+
+  // vm_update vm_render
   initLifecycle(Vue);
+
+  //全局api
   initGlobalApi(Vue);
-  Vue.prototype.$watch = function (exprOrFn, cb) {
-    new Watcher(this, exprOrFn, {
-      user: true
-    }, cb);
-  };
+
+  // 实现了nextTick和$watch
+  initStateMixin(Vue);
 
   return Vue;
 
